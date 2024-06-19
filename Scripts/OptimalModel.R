@@ -83,9 +83,9 @@ generate_optimal_model <- function(otherDat,
   
   processed_data <- process_data(otherDat, featuresList, window_length, overlap_percent, down_Hz, feature_normalisation)
   
-  #balanced_data <- balance_data(processed_data, threshold)
+  balanced_data <- balance_data(processed_data, threshold)
   
-  partitioned_data <- partition_data(processed_data, folds, training_percentage, stratification)
+  partitioned_data <- partition_data(balanced_data, folds, training_percentage, stratification)
   trDat <- na.omit(partitioned_data$training)
   trDat <- trDat %>% select(-partition, -ID)
   

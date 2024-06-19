@@ -136,7 +136,7 @@ process_data <- function(relabelled_data,
   window_samples <- window_length * down_Hz
   
   # Calculate overlap size in samples
-  overlap_samples <- if (overlap_percent > 0) (ceiling(overlap_percent / down_Hz)/10 * window_samples) else 0
+  overlap_samples <- if (overlap_percent > 0) ((overlap_percent / 100) * window_samples) else 0
   
   # Initialize an empty list to store the processed data chunks
   processed_windows <- foreach(st = seq(1, nrow(relabelled_data), by = (window_samples - overlap_samples)),

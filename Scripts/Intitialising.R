@@ -1,21 +1,20 @@
 # Main Script for Jordan Perentie Data Analysis
 
-comment <- "
-Contains formatting and inspecting training data, building and validating a ML model, 
-predicting behaviours from unlabelled data.
-Expected Directory Format:
-Scripts <- all the scripts called in this main executor
-Raw_Data <- contains all raw data
-Labelled_Data <- folders labelled by individual, csv or txt files containing annotated training data"
+# Contains formatting and inspecting training data, building and validating a ML model, 
+# predicting behaviours from unlabelled data.
+# Expected Directory Format:
+# Scripts <- all the scripts called in this main executor
+# Raw_Data <- contains all raw data
+# Labelled_Data <- folders labelled by individual, csv or txt files containing annotated training data"
 
 # Install Packages ####
 #install.packages("pacman")
 library(pacman)
-p_load(tidyverse, data.table, stringr, tools, doParallel, parallel, randomForest)
+p_load(tidyverse, data.table, stringr, tools, doParallel, parallel, randomForest, e1071)
 
 # Set Variables ####
-base_path <- "R:/FSHEE/Science/Unsupervised-Accel/Other_Projects/Jordan_Perentie"
-activity_key_path <- "R:/FSHEE/Science/Unsupervised-Accel/Other_Projects/Jordan_Perentie/Activity_Key.csv"
+base_path <- "R:/FSHEE/Science/Unsupervised-Accel/Other_Projects/Jordan_Perentie/PerentieAnalysis"
+activity_key_path <- "R:/FSHEE/Science/Unsupervised-Accel/Other_Projects/Jordan_Perentie/PerentieAnalysis/Activity_Key.csv"
 
 frequency <- 50
 
@@ -70,33 +69,34 @@ fwrite(clean_training_data, file.path(base_path, "DiCicco_Perentie_Labelled.csv"
 # When you have determined the ideal ML architecture, enter the parameters below
 
 ## Load in Data ####
-otherDat <- read.csv(file.path(base_path, "Output/otherDat.csv"))
-tstDat <- read.csv(file.path(base_path, "Output/tstDat.csv"))
+training_data <- fread(file.path(base_path, "Controlled_DiCicco_Perentie_Labelled.csv"))
+tstDat <- training_data %>% filter(ID == "Abigail") # individual not included in training
+otherDat <- training_data %>% filter(!ID == "Abigail") # remaining data
 
 ## Generate Optimal Model ####
-features_list <- c("mean", "max", "min", "sd", "cor", "SMA", "minODBA", "maxODBA", "minVDBA", "maxVDBA") #, 
-#"RMS", "FFT", "entropy", "zero_crossing")
+featuresList <- c("mean", "max", "min", "sd", "cor", "SMA", "minODBA", "maxODBA", "minVDBA", "maxVDBA", 
+"RMS", "FFT", "entropy", "zero_crossing")
 
 optimal_trained_model <- generate_optimal_model(otherDat, 
                                                 down_Hz = 50, 
-                                                window_length = 1, 
-                                                overlap_percent = 0, 
-                                                features_list, 
-                                                threshold = 500, 
+                                                window_length = 2, 
+                                                overlap_percent = 20, 
+                                                featuresList, 
+                                                threshold = 250000, 
                                                 stratification, # set to FALSE for now, not coded
                                                 feature_normalisation = FALSE,
-                                                folds = 10, 
-                                                training_percentage = 0.6, 
+                                                folds = 1, 
+                                                training_percentage = 0.9, 
                                                 model_architecture = "RF",
-                                                trees_number = 10)
+                                                trees_number = 50)
 # save for later
 model_file_path <- file.path(base_path, 'Output', "OptimalTrainedModel.rda")
 save(optimal_trained_model, file = model_file_path)
 
 # TEST MODEL ####
 ## Process tstDat to match ####
-processed_data <- process_data(tstDat, features_list, window_length = 1, 
-                               overlap_percent = 0, 50, feature_normalisation = FALSE) # second last one is down_Hz
+processed_data <- process_data(tstDat, features_list, window_length = 2, 
+                               overlap_percent = 20, 50, feature_normalisation = FALSE) # second last one is down_Hz
 tstDat2 <- processed_data %>% select(-ID)
 
 optimal_results <- verify_optimal_results(tstDat2, optimal_trained_model, 
@@ -110,7 +110,21 @@ print(optimal_results$stacked_plot)
 print(optimal_results$metrics)
 
 
+# Predict behaviours onto unlabelled data
+# load in the model
+load(file.path(base_path, "Output/OptimalTrainedModel.rda"))
 
+# load in the raw files 
+unlabelled_data <- list.files(file.path(base_path, "Raw_data"), full.names = TRUE)
+
+behaviours <- predict_behaviours(optimal_trained_model, 
+                                 unlabelled_data, 
+                                 down_Hz = 50, 
+                                 window_length = 1, 
+                                 overlap_percent = 0, 
+                                 features_list, 
+                                 feature_normalisation = FALSE
+                                 )
 
 
 
