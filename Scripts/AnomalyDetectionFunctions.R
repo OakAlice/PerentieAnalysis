@@ -29,7 +29,8 @@ split_data <- function(data, targetActivity) {
 # function for performing the test
 unsup_1_class_SVM_results <- function(
     name,
-    targetActivity, 
+    targetActivity,
+    labelled_path,
     features_list,
     window_length,
     overlap_percent,
@@ -41,8 +42,8 @@ unsup_1_class_SVM_results <- function(
 ){
   
   # read in the training and validation data
-  training_data <- fread(file.path(save_path, paste(name, targetActivity, "training_data.csv", sep = "_")))
-  validation_data <- fread(file.path(save_path, paste(name, targetActivity, "validation_data.csv", sep = "_")))
+  training_data <- fread(file.path(labelled_path, paste(name, targetActivity, "training_data.csv", sep = "_")))
+  validation_data <- fread(file.path(labelled_path, paste(name, targetActivity, "validation_data.csv", sep = "_")))
   
   # process the training and validation data
   training_data <- process_data(na.omit(training_data), features_list, window_length = window_length, 
@@ -186,21 +187,23 @@ create_datasets <- function(names, targetActivities, save_path){
 }
 
 # function to evaluate optimal model on test data
-test_evaluate_SVM <- function(top_options, i, name, targetActivity, save_path, base_path, features_list) {
-  # Extract and convert parameters from top_options
-  name <- as.character(top_options[i, "name"])
-  targetActivity <- as.character(top_options[i, "targetActivity"])
-  window_length <- as.numeric(top_options[i, "window_length"])
-  overlap_percent <- as.numeric(top_options[i, "overlap_percent"])
-  down_Hz <- as.numeric(top_options[i, "down_Hz"])
-  feature_normalisation <- as.character(top_options[i, "feature_normalisation"])
-  nu <- as.numeric(top_options[i, "nu"])
-  kernel <- as.character(top_options[i, "kernel"])
+model_testing <- function(optimal, i, labelled_path){
   
-  # Run unsupervised 1-class SVM
+  # Extract and convert parameters from optimal
+  name <- as.character(optimal[i, "name"])
+  targetActivity <- as.character(optimal[i, "targetActivity"])
+  window_length <- as.numeric(optimal[i, "window_length"])
+  overlap_percent <- as.numeric(optimal[i, "overlap_percent"])
+  down_Hz <- as.numeric(optimal[i, "down_Hz"])
+  feature_normalisation <- as.character(optimal[i, "feature_normalisation"])
+  nu <- as.numeric(optimal[i, "nu"])
+  kernel <- as.character(optimal[i, "kernel"])
+  
+  # Run unsupervised 1-class SVM with the training data
   test_results <- unsup_1_class_SVM_results(
     name = name,
     targetActivity = targetActivity,
+    labelled_path,
     features_list = features_list,
     window_length = window_length,
     overlap_percent = overlap_percent,
@@ -211,9 +214,9 @@ test_evaluate_SVM <- function(top_options, i, name, targetActivity, save_path, b
     save_path = save_path
   )
   
-  # Extract the SVM model
+  # Extract the SVM model and save it
   SVM_model <- test_results$SVM_model
-  saveRDS(SVM_model, file.path(base_path, "Output/SVM_Models", paste(input_name, input_targetActivity, "SVM.rds", sep = "_")))
+  saveRDS(SVM_model, file.path(base_path, "Output/SVM_Models", paste(name, targetActivity, "SVM.rds", sep = "_")))
   
   # Load and preprocess the test data
   test_data_path <- file.path(base_path, "SVM_datasets", paste(name, targetActivity, "test_data.csv", sep = "_"))
