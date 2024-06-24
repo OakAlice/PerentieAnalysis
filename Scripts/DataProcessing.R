@@ -110,7 +110,7 @@ compute_features <- function(window_chunk, features_list) {
   }
   
   result$Activity <- names(which.max(table(window_chunk$Activity)))
-  result$time <- window_chunk$time[1]
+  result$Timestamp <- window_chunk$Timestamp[1]
   result$ID <- window_chunk$ID[1]
   
   return(result)
@@ -153,7 +153,7 @@ process_data <- function(relabelled_data,
   processed_data <- data.frame(processed_windows)
   
   # normalisation,if selected
-  features_to_normalise <- setdiff(colnames(processed_data), c("time", "ID", "Activity"))
+  features_to_normalise <- setdiff(colnames(processed_data), c("Timestamp", "ID", "Activity"))
   if (feature_normalisation == "MinMaxScaling") {
     # Normalize the selected columns
     processed_data[features_to_normalise] <- lapply(processed_data[features_to_normalise], function(x) {
