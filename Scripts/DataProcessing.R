@@ -56,7 +56,7 @@ compute_features <- function(window_chunk, features_list) {
       result[paste0("entropy_", axis)] <- calculate_entropy(window_chunk[[axis]])
     }
     if ("auto" %in% features_list){
-      result[paste0("auto_", axis)] <- calculate_autocorrelation(window_chunk[[axis]])
+      result[paste0("auto_", axis)] <- calculate_autocorrelation(window_chunk[[axis]], 1)
     }
     if ("zero" %in% features_list){
       result[paste0("zero_", axis)] <- calculate_zero_crossing(window_chunk[[axis]])

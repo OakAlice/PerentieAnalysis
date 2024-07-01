@@ -2,18 +2,17 @@
 # Animal accelerometer behaviour classification using an ensemble of single class SVM
 # runs the entire processing for one individual at a time
 
-# Set up
+# Set up ####
 #install.packages("pacman")
 library(pacman)
 p_load(tidyverse, data.table, stringr, tools, e1071, doParallel, parallel)
 
-base_path <- "R:/FSHEE/Science/Unsupervised-Accel/Other_Projects/Jordan_Perentie/PerentieAnalysis"
+base_path <- "C:/Users/oaw001/Documents/Perentie"
 
 source(file.path(base_path, "Scripts/DataProcessing.R")) 
 source(file.path(base_path, "Scripts/AnomalyDetectionFunctions.R"))
-source(file.path(base_path, "Scripts/AnomalyDetection.R"))
 
-# creating datasets ####
+# Creating datasets ####
 #(base_path, file.path(base_path, "Activity_Key.csv"))
 labelled_data <- fread(file.path(base_path, "DiCicco_Perentie_Labelled.csv"))
 #labelled_data <- labelled_data %>%
@@ -21,150 +20,209 @@ labelled_data <- fread(file.path(base_path, "DiCicco_Perentie_Labelled.csv"))
 #  mutate(Activity = ifelse(Activity == "Climbing" | Activity == "Eating", "Other", Activity)) %>%
 #  mutate(Activity = ifelse(Activity == "Run" | Activity == "Walk", "Locomotion", Activity))
 
-labelled_data <- labelled_data %>% filter(!Activity == "NaN")
-summary <- labelled_data %>% group_by(Activity, ID) %>% count()
-
-names <- c("Eric", "Bubbles", "Abigail")
-targetActivities <- c("Locomotion", "Inactive")
-save_path <- "R:/FSHEE/Science/Unsupervised-Accel/Other_Projects/Jordan_Perentie/PerentieAnalysis/SVM_datasets"
-create_datasets(names, targetActivities, save_path)
-
-# check data quality ####
+# Check data quality ####
 #data <- fread(file.path(base_path, "SVM_datasets/Abigail_Locomotion_training_data.csv"))
 #behaviour_samples <- plot_behaviours(c("Inactive", "Walk", "Run", "Other"), labelled_data, 1000, 1)
 
-# define variables ####
-name_input <- "Abigail"
-targetActivity_options <- c("Inactive", "Locomotion")
 
-window_length_options <- c(0.5, 1)
-overlap_percent_options <- c(0, 25)
-down_Hz_options <- c(25, 50)
-feature_normalisation_options <- c("MinMaxScaling") #, "Standardisation")
-nu_options <- c(0.01, 0.1)
-kernel_options <- c("sigmoid", "polynomial") # "radial", 
-features_list <- c("mean", "max", "min", "sd", "cor", "SMA", "minODBA", "maxODBA", "minVDBA", "maxVDBA") #, 
-#"RMS", "FFT", "entropy", "zero_crossing")
+labelled_data <- labelled_data %>%
+  filter(Activity != "NaN")
 
-# Tuning ####
-# generate all possible combinations 
-options_df <- expand.grid(name_input, targetActivity_options, window_length_options, overlap_percent_options, down_Hz_options, 
-                          feature_normalisation_options, nu_options, kernel_options)
-colnames(options_df) <- c("ID", "targetActivity", "window_length", "overlap_percent", "down_Hz", 
-                          "feature_normalisation", "nu", "kernel")
-# model tuning function
-unsup_1_SVM_options_table <- model_tuning(options_df, labelled_path = file.path(base_path, "SVM_datasets"))
-
-unsup_1_SVM_options_tablev2 <- unsup_1_SVM_options_table
-# Extract the optimal ####
-optimal <- unsup_1_SVM_options_table %>%
-  group_by(name, targetActivity) %>%
-  arrange(desc(as.numeric(Validation_accuracy))) %>%
-  slice(1) %>%
+# Create a test dataframe containing the final third of each activity for each individual
+test_data <- labelled_data %>%
+  group_by(ID, Activity) %>%
+  arrange(Timestamp) %>%  # Ensure data is arranged chronologically
+  mutate(row_num = row_number(), 
+         total_rows = n()) %>%
+  filter(row_num > 2 * total_rows / 3) %>%
   ungroup()
 
-# alternatively, read it in
-optimal <- fread(file.path(base_path, "optimal.csv")) %>%
-  rename(name = ID)
+targetActivity_options <- c("Locomotion", "Inactive")
+window_length_options <- c(1)
+overlap_percent_options <- c(0)
+down_Hz_options <- c(25)
+feature_normalisation_options <- c("MinMaxScaling") #, "Standardisation")
+nu_options <- c(0.01, 0.1)
+kernel_options <- c("radial", "sigmoid", "polynomial")
+features_list <- c("mean", "max", "min", "sd", "cor", "SMA", "minODBA", "maxODBA", "minVDBA", "maxVDBA", "entropy", "zero", "auto")
 
-# Test the optimal model design ####
-i <- 1
-while (i <= nrow(optimal)) {
-  # Test each of the independent SVMs and save the SVM as an RDS
-  unsup_1_SVM_test <- model_testing(optimal, i, labelled_path = file.path(base_path, "SVM_datasets"))
+# From here on, loop per individual and activity
+optimal_model_designs <- data.frame()
+
+for (targetActivity in targetActivity_options){
+  # Tuning ####
+  # generate all possible combinations 
+  options_df <- expand.grid(targetActivity, window_length_options, overlap_percent_options, down_Hz_options, 
+                            feature_normalisation_options, nu_options, kernel_options)
+  colnames(options_df) <- c("targetActivity", "window_length", "overlap_percent", "down_Hz", 
+                            "feature_normalisation", "nu", "kernel")
+
+  # remove the test data
+  other_data <- anti_join(labelled_data, test_data)
   
-  # Flatten the confusion matrix
-  test_metrics <- flatten_confusion_matrix(unsup_1_SVM_test, "Test")
+  # randomly create training and validation dataset
+  datasets <- create_datasets(other_data, targetActivity)
+  training_data <- datasets$training_data %>% select(-Timestamp, -ID)
+  validation_data <- datasets$validation_data %>% select(-Timestamp, -ID)
+  print("datasets created")
+    
+  model_tuning_metrics <- model_tuning(options_df, base_path, training_data, validation_data, targetActivity)
+    
+  print(paste("Model tuning for", targetActivity, "complete"))
   
-  # Combine the optimal options with the test metrics
-  optimal_model_information <- cbind(optimal[i, ], t(test_metrics))
-  colnames(optimal_model_information) <- c(colnames(optimal), colnames(t(test_metrics)))
-  
-  # Combine the results into a single data frame
-  if (i == 1) {
-    optimal_information <- optimal_model_information
-  } else {
-    optimal_information <- rbind(optimal_information, optimal_model_information)
-  }
-  
-  i <- i + 1
+  # write out the tuning csv
+  fwrite(model_tuning_metrics, file.path(base_path, paste(targetActivity, "tuning_metrics.csv", sep = "_")))
 }
+  
+  # CALCULATE THE AVERAGE ##
+  # Extract the optimal ####
+  optimal_df <- model_tuning_metrics %>%
+    group_by(name, targetActivity) %>%
+    arrange(desc(as.numeric(Validation_accuracy))) %>%
+    slice(1) %>%
+    ungroup()
 
-# Apply both the SVMs to the same data as an example ####
+  # or upload the optimal
+  Loco <- as.data.frame(fread(file.path(base_path, "Locomotion_tuning_metrics.csv"))) %>% 
+    arrange(desc(Validation_accuracy)) %>% head(n=1)
+  Inactive <- as.data.frame(fread(file.path(base_path, "Inactive_tuning_metrics.csv"))) %>%
+    arrange(desc(Validation_accuracy)) %>% head(n=1)
+  optimal_df <- rbind(Loco, Inactive)
+
+optimal_model_tests <- data.frame()
+
+activity <- "Inactive"
+
+for (activity in targetActivity_options){
+
+  # Extract the training and test data
+  evaluation_data <- test_data %>% select(-Timestamp, -ID) # generated earlier
+  other_data <- anti_join(labelled_data, evaluation_data)
+  training_data <- other_data %>% filter(Activity == activity) %>% select(-Timestamp, -ID)
+  
+  # Extract the optimal parameters
+  optimal_df_row <- optimal_df %>% filter(targetActivity == activity)
+  
+  model_evaluation_metrics <- model_testing(optimal_df_row, base_path, training_data, evaluation_data, activity)
+  print(paste("Optimal model testing for", activity, "complete"))
+  
+  optimal_model_tests <- rbind(optimal_model_tests, model_evaluation_metrics)
+
+}
+  
+fwrite(optimal_model_tests, file.path(base_path, "Optimal_Pooled_Model_Test_Metrics_Balanced.csv"))
+
+
+
+
+
+
+
+
+# Apply an optimal SVMs to some sample data as an example ####
+# load in the example individual
 example_data <- fread(file.path(base_path, "DiCicco_Perentie_Labelled.csv")) %>% 
-  filter(ID == "Abigail")
+    filter(ID == "Abigail") %>%
+    filter(!Activity == "NaN")
+fwrite(example_data, file.path(base_path, "Abigail_data.csv"))
 
-processed_data_list <- list()
+# load in the optimal variables
+optimal_df <- as.data.frame(fread(file.path(base_path, "optimal.csv")))
 
-for (target in targetActivity_options) {
-  # Process the data for the current target activity
-  example_processed <- example_data %>%
-    process_data(features_list, 
-                 window_length = as.numeric(optimal$window_length[optimal$targetActivity == target]), 
-                 overlap_percent = as.numeric(optimal$overlap_percent[optimal$targetActivity == target]),
-                 down_Hz = as.numeric(optimal$down_Hz[optimal$targetActivity == target]), 
-                 feature_normalisation = as.character(optimal$feature_normalisation[optimal$targetActivity == target])) %>%
+# behaviours to analyse
+behaviours<- c("Inactive", "Locomotion")
+
+for (behaviour in behaviours){
+  # behaviour <- behaviours[2]
+  # extract the right row
+  optimal_design <- optimal_df %>% filter(targetActivity == behaviour)
+  
+  # define the variables
+  window_length <- as.numeric(optimal_design["window_length"])
+  overlap_percent = as.numeric(optimal_design["overlap_percent"])
+  down_Hz = as.numeric(optimal_design["down_Hz"])
+  feature_normalisation = as.character(optimal_design["feature_normalisation"])
+  nu = as.numeric(optimal_design["nu"])
+  kernel = as.character(optimal_design["kernel"])
+
+  # process data
+  example_data_processed <- example_data %>%
+    process_data(features_list, window_length, overlap_percent, down_Hz, feature_normalisation) %>%
     na.omit() %>%
-    select(-ID) %>%
-    mutate(row = row_number())
+    select(-ID) %>% 
+    select(-c(zero_Accel_Y, zero_Accel_Z))
   
-  # Separate features and labels
-  example_features <- example_processed %>% select(-Activity, -Timestamp, -row)
-  example_labels <- example_processed %>% select(Activity, Timestamp, row)
+  # extract components
+  example_times <- example_data_processed %>% select(Timestamp)
+  example_reference <- example_data_processed %>% select(Activity)
+  example_data_processed <- example_data_processed %>% select(-Timestamp)
   
-  # predict
-  # load the SVM
-  SVM_model <- readRDS(file.path(base_path, "Output/SVM_Models", 
-                                 paste(as.character(optimal$name[optimal$targetActivity == target]), 
-                                       target, "SVM.rds", sep = "_")))
+  ## read in the SVM
+  optimal_SVM<- readRDS(file.path(base_path, paste0(behaviour, ".rds")))
+
+  # run the predictions
+  model_evaluation <- evaluate_model_performance(example_data_processed, optimal_SVM, "Example", behaviour)
   
-  predicted_labels <- predict(SVM_model, newdata = example_features)
-  predicted_labels <- ifelse(predicted_labels == "TRUE", target, "Outlier")
-  predicted_labels <- cbind(predicted_labels, example_labels)
+  metrics <- model_evaluation$metrics
+  predicted <- model_evaluation$predicted
+  reference <- model_evaluation$reference
   
-  # Store the processed features and labels in the list
-  processed_data_list[[paste("processed_data_", target, sep = "")]] <- list(predicted_labels = predicted_labels, example_labels = example_labels)
+  # combine these
+  example_results <- example_times %>%
+    mutate(Reference = reference) %>%
+    mutate(Predicted = predicted)
+  
+  fwrite(example_results, file.path(base_path, paste0(behaviour, "_Abigail.csv")))
 }
 
-# Access each of the processed data and line them up next to each other
-mode_function <- function(x) {
-  uniq_x <- unique(x)
-  uniq_x[which.max(tabulate(match(x, uniq_x)))]
+
+# combine the dataframes
+options(digits=20)
+Inactive<- fread(file.path(base_path, "Inactive_Abigail.csv")) %>% 
+  mutate(InactivePredictions = ifelse(Predicted == "Normal", "Inactive", "Other")) %>%
+  select(Timestamp, InactivePredictions)
+Locomotion<- fread(file.path(base_path, "Locomotion_Abigail.csv")) %>%
+  mutate(LocomotionePredictions = ifelse(Predicted == "Normal", "Locomotion", "Other")) %>%
+  select(Timestamp, LocomotionePredictions)
+
+Example<- fread(file.path(base_path, "Abigail_data.csv")) %>% select(Timestamp, Activity)
+
+Total<- merge(Inactive, Locomotion, by = "Timestamp", all = TRUE)
+Total <- merge(Total, Example, by = "Timestamp", all = TRUE)
+
+# convert the time to an averaged minute
+Total <- Total %>% 
+  mutate(Time = as.POSIXct((Timestamp - 719529)*86400, origin = "1970-01-01", tz = "UTC")) %>%
+  mutate(Minute = round_date(Time, unit = "minute"))
+
+# find the most frequent non-NA value
+most_frequent <- function(x) {
+  if (all(is.na(x))) {
+    return(NA)
+  } else {
+    return(names(sort(table(x), decreasing = TRUE))[1])
+  }
 }
 
-example_Inactive_labels <- processed_data_list[["processed_data_Inactive"]]$predicted_labels
-example_Locomotion_labels <- processed_data_list[["processed_data_Locomotion"]]$predicted_labels
-example_true_labels <- processed_data_list[["processed_data_Inactive"]]$example_labels
+Total_grouped <- Total %>%
+  select(-Timestamp, -Time) %>%
+  group_by(Minute) %>%
+  summarise(across(everything(), most_frequent, .names = "{col}"), .groups = 'drop')
+
+Total_grouped <- Total_grouped %>%
+  mutate(Outcome = ifelse(
+    InactivePredictions == "Inactive" & LocomotionePredictions == "Other", "Inactive",
+    ifelse(
+      InactivePredictions == "Other" & LocomotionePredictions == "Other", "Other", "Locomotion"
+    )
+  ))
 
 
-combined_data <- data.frame(
-  Inactive = example_Inactive_labels,
-  True = example_true_labels
-)
-
-result <- combined_data %>%
-  mutate(row_number = row_number()) %>%
-  group_by(group = (row_number - 1) %/% 60) %>%
-  summarise(
-    Most_Common_Inactive = mode_function(Inactive.predicted_labels),
-    Most_Common_True = mode_function(True.Activity)
-  )
-
-predicted_labels <- cbind(example_Locomotion_labels, example_true_labels)
+summary <- Total_grouped %>%
+  group_by(Activity, Outcome) %>%
+  count() %>%
+  na.omit()
 
 
+# now caluclate the accuracy
 
-summary <- predicted_labels %>% group_by(Activity, example_Locomotion_labels) %>% count()
-
-
-predicted_labels <- predicted_labels %>%
-  mutate(Predicted_labels = ifelse(example_Inactive_labels == "Inactive", "Inactive", example_Inactive_labels)) %>%
-  mutate(Predicted_labels = ifelse(example_Locomotion_labels == "Locomotion", "Locomotion", Predicted_labels))
-
-
-total_count <- nrow(predicted_labels)
-
-summary <- predicted_labels %>%
-  group_by(Activity, Predicted_labels) %>%
-  summarize(count = n(), .groups = 'drop') %>%
-  mutate(percentage = count / total_count)
