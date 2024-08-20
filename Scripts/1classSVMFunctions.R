@@ -62,8 +62,8 @@ model_tuning <- function(options_df, base_path, training_data, evaluation_data, 
         feature_normalisation = feature_normalisation,
         nu = nu,
         kernel = kernel_shape,
-        gamma = gamma,
-        degree = degree,
+        gamma = ifelse(is.na(gamma), "", gamma),
+        degree = ifelse(is.na(degree), "", degree),
         t(metrics)
       )
       

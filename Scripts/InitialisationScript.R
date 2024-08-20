@@ -12,7 +12,7 @@ library(zoo)
 
 
 # set base path
-base_path <- ("C:/Users/oaw001/Documents/AnomalyDetection")
+base_path <- setwd("R:/FSHEE/Science/Unsupervised-Accel/Other_Projects/Jordan_Perentie/PerentieAnalysis")
 
 # load in the files
 source(file.path(base_path, "Scripts", "PlotFunctions.R"))
