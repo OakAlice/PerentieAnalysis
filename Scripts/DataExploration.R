@@ -3,10 +3,11 @@
 # plot the training_data
 data <- other_data %>%
   group_by(Activity) %>%
-  slice_head(n = 10000) %>%
+  #slice_head(n = 10000) %>%
   ungroup()
-data_processed <- process_data(na.omit(data), features_list, window_length = 3, 
-                                        overlap_percent = 0, freq_Hz = 20, 
+features_list <- c("mean", "max", "min", "sd", "cor", "SMA", "minODBA", "maxODBA", "minVDBA", "maxVDBA", "entropy", "auto") # zero
+data_processed <- process_data(na.omit(data), features_list, window_length = 5, 
+                                        overlap_percent = 0, down_Hz = 50, 
                                         feature_normalisation = "Standardised")
 
 # Reshape data from wide to long format
@@ -36,7 +37,7 @@ ggplot(data_long, aes(x = Value, fill = Activity)) +
 
 
 # plot how the behaviours change over time
-data2 <- other_data %>% arrange(ID, time) %>% slice_head(n = 10000) %>% ungroup() %>%
+data2 <- other_data %>% arrange(ID, Timestamp) %>% slice_head(n = 940000) %>% ungroup() %>%
   mutate(numeric_activity = as.numeric(factor(Activity)), 
          Activity = factor(Activity),
          relative_seconds = row_number())
