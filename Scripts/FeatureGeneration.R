@@ -28,6 +28,8 @@ compute_features <- function(window_chunk, features_list) {
   
   result <- data.frame(row.names = 1)
   
+  window_chunk <- data.frame(window_chunk)
+  
   for (axis in available_axes) {
     
     # axis = "Accelerometer.X"

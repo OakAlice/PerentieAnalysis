@@ -18,10 +18,12 @@ model_tuning <- function(options_df, base_path, training_data, evaluation_data, 
       # Define the variables for this loop
       window_length <- as.numeric(options_df[i, "window_length"])
       overlap_percent <- as.numeric(options_df[i, "overlap_percent"])
-      down_Hz <- as.numeric(options_df[i, "frequency_Hz"])
+      down_Hz <- as.numeric(options_df[i, "down_Hz"])
       feature_normalisation <- as.character(options_df[i, "feature_normalisation"])
       nu <- as.numeric(options_df[i, "nu"])
       kernel_shape <- as.character(options_df[i, "kernel"])
+      gamma <- as.numeric(options_df[i, "gamma"])
+      degree <- as.numeric(options_df[i, "degree"])
       
       print(paste("beginning model training at:", Sys.time()))
       
@@ -34,12 +36,14 @@ model_tuning <- function(options_df, base_path, training_data, evaluation_data, 
             down_Hz,
             feature_normalisation,
             nu,
-            kernel_shape
+            kernel_shape,
+            gamma,
+            degree
           )
           
           # Process and evaluate the data
-          evaluation_data_processed <- evaluation_data %>%
-            process_data(features_list, window_length, overlap_percent, down_Hz, feature_normalisation) %>%
+          evaluation_data_processed <- 
+            process_data(evaluation_data, features_list, window_length, overlap_percent, down_Hz, feature_normalisation) %>%
             na.omit()
           
           print(paste("evaluation data processed at:", Sys.time()))
@@ -58,6 +62,8 @@ model_tuning <- function(options_df, base_path, training_data, evaluation_data, 
         feature_normalisation = feature_normalisation,
         nu = nu,
         kernel = kernel_shape,
+        gamma = gamma,
+        degree = degree,
         t(metrics)
       )
       
@@ -113,8 +119,8 @@ model_testing <- function(optimal_df_row, base_path, training_data, evaluation_d
   saveRDS(single_class_SVM, file.path(base_path, paste0(targetActivity, "_2.rds")))
   
   # evaluate performance
-  evaluation_data <- evaluation_data %>%
-    process_data(features_list, window_length, overlap_percent, down_Hz, feature_normalisation) %>%
+  evaluation_data <-
+    process_data(evaluation_data, features_list, window_length, overlap_percent, down_Hz, feature_normalisation) %>%
     na.omit()
   
   # downsample the data to balance classes
@@ -155,7 +161,9 @@ build_1_class_SVM <- function(
     down_Hz,
     feature_normalisation,
     nu,
-    kernel_shape
+    kernel_shape,
+    gamma = NA,
+    degree = NA
 ){
   
   # process the training and validation data
@@ -170,12 +178,25 @@ build_1_class_SVM <- function(
   training_data_labels <- training_data_processed %>% select(Activity)
 
   # train a model with the training predictors (no labels)
-  single_class_SVM <- svm(training_data_predictors, 
-                          y = NULL,  # No response variable for one-class SVM
-                          type = 'one-classification',
-                          nu = nu,
-                          scale = TRUE,
-                          kernel = kernel_shape)
+  params <- list(
+    gamma = gamma,
+    degree = degree
+  )
+  
+  # Remove NA values from the parameters
+  params <- Filter(Negate(is.na), params)
+  
+  single_class_SVM <- do.call(svm, c(
+    list(
+      training_data_predictors, 
+      y = NULL,  # No response variable for one-class SVM
+      type = 'one-classification',
+      nu = nu,
+      scale = TRUE,
+      kernel = kernel_shape
+    ),
+    params  # Add filtered parameters
+  ))
   
   print(paste("model trained at:", Sys.time()))
   

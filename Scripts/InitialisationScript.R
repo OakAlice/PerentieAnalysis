@@ -26,7 +26,7 @@ data_original <- data_original %>%
          Accelerometer.Y = Accel_Y,
          Accelerometer.Z = Accel_Z) %>%
   filter(!Activity == "NaN")
-base_path <- "C:/Users/oaw001/Documents/Perentie"
+base_path <- "C:/Users/oaw001/Documents/Perentie/Round2"
 
 
 # Split Data ####
@@ -47,51 +47,82 @@ beh_volume_plot <- explore_data(data = data_original, frequency = 25, colours = 
 # 1class-SVM model design tuning ####
 # list variables to test
 targetActivity_options <- c("Inactive", "Locomotion")
-window_length_options <- c(1)
-overlap_percent_options <- c(0)
-freq_Hz <- 50
-feature_normalisation_options <- c("Standardisation") # "MinMaxScaling"
-nu_options <- c(0.1, 0.2, 0.3, 0.4)
-kernel_options <- c("radial") 
-features_list <- c("mean", "max", "min", "sd", "cor", "SMA", "minODBA", "maxODBA", "minVDBA", "maxVDBA", "entropy", "auto") # zero
-validation_individuals <- 1
+
+
+window_length_options <- c(1, 5) ##
+overlap_percent_options <- c(0, 50) ##
+freq_Hz <- 50 ##
+feature_normalisation_options <- c("Standardisation") # "MinMaxScaling" ##
+nu_options <- c(0.4, 0.5, 0.6, 0.7) ##
+kernel_options <- c("radial", "polynomial", "sigmoid", "linear")
+gamma_options <- c(0.001, 0.01, 0.1, 1, "auto")
+degree_options <- c(3)
+
+model_hyperparameters_list <- list(
+  radial = list(
+    gamma = gamma_options
+  ),
+  polynomial = list(
+    gamma = gamma_options,
+    degree = degree_options
+  ),
+  sigmoid = list(
+    gamma = gamma_options
+  )
+)
+
+#features_list <- c("mean", "max", "min", "sd", "cor", "SMA", "minODBA", "maxODBA", "minVDBA", "maxVDBA", "entropy", "auto") # zero
+features_list <- c("auto", "entropy", "max", "min", "maxVDBA", "sd")
+
+
+#validation_individuals <- 1
 all_axes <- c("Accelerometer.X", "Accelerometer.Y", "Accelerometer.Z")
 # need to add this into the rest of the code 
 
 # from here on, it will loop
 optimal_model_designs <- data.frame()
 
-for (targetActivity in targetActivity_options){
-  # Tuning ##
-  # generate all possible combinations
-  options_df <- expand.grid(targetActivity, window_length_options, overlap_percent_options, freq_Hz, 
-                            feature_normalisation_options, nu_options, kernel_options)
-  colnames(options_df) <- c("targetActivity", "window_length", "overlap_percent", "frequency_Hz", 
-                            "feature_normalisation", "nu", "kernel")
-  
-  # create training and validation datasets by selecting chronological segments
-  training_data <- other_data %>%
-    filter(ID %in% unique(ID)[-length(unique(ID))]) %>%
-    filter(Activity == targetActivity) %>% 
-    select(-Timestamp, -ID)
-  validation_data <- anti_join(other_data, training_data) %>% 
-    select(-Timestamp, -ID)
-  
-  print("datasets created")
-  
-  model_tuning_metrics <- model_tuning(options_df, base_path, training_data, validation_data, targetActivity)
-  
-  print(paste("Model tuning for", targetActivity, "complete"))
-  
-  # write out the tuning csv
-  fwrite(model_tuning_metrics, file.path(base_path, paste(targetActivity, "tuning_metrics.csv", sep = "_")))
-}
+#for (targetActivity in targetActivity_options){
+targetActivity <- "Locomotion"
+# Tuning ##
+# generate all possible combinations
+options_df <- expand.grid(targetActivity, window_length_options, overlap_percent_options, freq_Hz, 
+                          feature_normalisation_options, nu_options, kernel_options)
+colnames(options_df) <- c("targetActivity", "window_length", "overlap_percent", "frequency_Hz", 
+                          "feature_normalisation", "nu", "kernel")
+
+# add the additional parameters
+extended_options_df <- create_extended_options(model_hyperparameters_list, options_df)
+
+# create training and validation datasets by selecting chronological segments
+training_data <- other_data %>%
+  filter(ID %in% unique(ID)[-length(unique(ID))]) %>%
+  filter(Activity == targetActivity) %>% 
+  select(-Timestamp, -ID)
+validation_data <- anti_join(other_data, training_data) %>% 
+  select(-Timestamp, -ID)
+
+print("datasets created")
+
+model_tuning_metrics <- model_tuning(extended_options_df, base_path, training_data, validation_data, targetActivity)
+
+print(paste("Model tuning for", targetActivity, "complete"))
+
+# write out the tuning csv
+fwrite(model_tuning_metrics, file.path(base_path, paste(targetActivity, "tuning_metrics.csv", sep = "_")))
+#}
+
+
+
+
+
+
 
 
 # Test optimal model ####
 # upload csv with the best model designs
 optimal_df <- fread(file.path(base_path, "Optimal_metrics_test.csv"))
-  
+
 optimal_model_tests <- data.frame()
 
 targetActivity_options <- c("Inactive", "Locomotion")
