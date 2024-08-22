@@ -292,3 +292,41 @@ create_datasets <- function(data, targetActivity, validation_individuals) {
   return(list(data_training = data_training,
               data_validation = data_validation))
 }
+
+
+
+# create all options of the model specific hyperparameters
+expand_hyperparameters <- function(model_hyperparameters_list) {
+  hyperparameters_df <- data.frame(kernel = character(0))
+  
+  # Iterate over each model hyperparameters
+  for (kernel_name in names(model_hyperparameters_list)) {
+    model_hyperparameters <- model_hyperparameters_list[[kernel_name]]
+    param_names <- names(model_hyperparameters)
+    all_combinations <- expand.grid(model_hyperparameters)
+    
+    all_combinations$kernel <- kernel_name
+    
+    # Merge with existing hyperparameters dataframe
+    hyperparameters_df <- dplyr::bind_rows(hyperparameters_df, all_combinations)
+  }
+  
+  return(hyperparameters_df)
+}
+
+# bind this with the normal parameter options
+create_extended_options <- function(model_hyperparameters_list, options_df) {
+  # Expand hyperparameters for each model
+  all_hyperparameters_df <- expand_hyperparameters(model_hyperparameters_list)
+  
+  # Merge only the model_architectures that appear in options_df
+  extended_options_df <- merge(
+    options_df,
+    all_hyperparameters_df[all_hyperparameters_df$kernel %in% unique(options_df$kernel), ],
+    by = "kernel",
+    all = TRUE
+  )
+  
+  return(extended_options_df)
+}
+

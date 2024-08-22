@@ -12,7 +12,7 @@ library(zoo)
 
 
 # set base path
-base_path <- setwd("R:/FSHEE/Science/Unsupervised-Accel/Other_Projects/Jordan_Perentie/PerentieAnalysis")
+base_path <- setwd("C:/Users/oaw001/Documents/Perentie")
 
 # load in the files
 source(file.path(base_path, "Scripts", "PlotFunctions.R"))
@@ -20,13 +20,13 @@ source(file.path(base_path, "Scripts", "1classSVMFunctions.R"))
 source(file.path(base_path, "Scripts", "FeatureGeneration.R"))
 
 # jordan data
-data_original <- fread("C:/Users/oaw001/Documents/Perentie/DiCicco_Perentie_Labelled.csv")
+data_original <- fread("C:/Users/oaw001/Documents/Perentie/DiCicco_Perentie_Labelled2.csv")
 data_original <- data_original %>%
   rename(Accelerometer.X = Accel_X,
          Accelerometer.Y = Accel_Y,
          Accelerometer.Z = Accel_Z) %>%
   filter(!Activity == "NaN")
-base_path <- "C:/Users/oaw001/Documents/Perentie/Round2"
+#base_path <- "C:/Users/oaw001/Documents/Perentie/Round3"
 
 
 # Split Data ####
@@ -46,16 +46,14 @@ beh_volume_plot <- explore_data(data = data_original, frequency = 25, colours = 
 
 # 1class-SVM model design tuning ####
 # list variables to test
-targetActivity_options <- c("Inactive", "Locomotion")
-
-
+down_Hz <- 50
 window_length_options <- c(1, 5) ##
 overlap_percent_options <- c(0, 50) ##
 freq_Hz <- 50 ##
 feature_normalisation_options <- c("Standardisation") # "MinMaxScaling" ##
-nu_options <- c(0.4, 0.5, 0.6, 0.7) ##
+nu_options <- c(0.001, 0.01, 0.1, 0.5, 0.9) ##
 kernel_options <- c("radial", "polynomial", "sigmoid", "linear")
-gamma_options <- c(0.001, 0.01, 0.1, 1, "auto")
+gamma_options <- c(0.1, 0.25, 0.5)
 degree_options <- c(3)
 
 model_hyperparameters_list <- list(
@@ -74,7 +72,6 @@ model_hyperparameters_list <- list(
 #features_list <- c("mean", "max", "min", "sd", "cor", "SMA", "minODBA", "maxODBA", "minVDBA", "maxVDBA", "entropy", "auto") # zero
 features_list <- c("auto", "entropy", "max", "min", "maxVDBA", "sd")
 
-
 #validation_individuals <- 1
 all_axes <- c("Accelerometer.X", "Accelerometer.Y", "Accelerometer.Z")
 # need to add this into the rest of the code 
@@ -86,9 +83,9 @@ optimal_model_designs <- data.frame()
 targetActivity <- "Locomotion"
 # Tuning ##
 # generate all possible combinations
-options_df <- expand.grid(targetActivity, window_length_options, overlap_percent_options, freq_Hz, 
+options_df <- expand.grid(targetActivity, window_length_options, overlap_percent_options, down_Hz, 
                           feature_normalisation_options, nu_options, kernel_options)
-colnames(options_df) <- c("targetActivity", "window_length", "overlap_percent", "frequency_Hz", 
+colnames(options_df) <- c("targetActivity", "window_length", "overlap_percent", "down_Hz", 
                           "feature_normalisation", "nu", "kernel")
 
 # add the additional parameters

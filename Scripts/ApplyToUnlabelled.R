@@ -1,77 +1,79 @@
-# Apply to unlabelled data
+# Anomaly detection test
 
-# load in the SVMS
-Inactive_SVM <- readRDS(file.path(base_path, "Output/SVM_Models/Inactive.rds"))
-Locomotion_SVM <- readRDS(file.path(base_path, "Output/SVM_Models/Locomotion.rds"))
-
-# Load in the optimal model designs that match the SVMs
-optimal <- fread(file.path(base_path, "optimal.csv"))
-
-# Behaviours to analyse
-behaviours <- c("Inactive", "Locomotion")
-
-# List the unlabelled data
-chunked_raw <- list.files("D:/Jordan_Perentie/Chunked_accel", full.names = TRUE)
-write_path <- "D:/Jordan_Perentie/Labelled_Chunked_accel"
-
-for (file in chunked_raw) {
-  raw <- fread(file)
-  colnames(raw) <- c("Timestamp", "Accel_X", "Accel_Y", "Accel_Z")
-  
-  # Get the name from the filename
-  file_name <- basename(file)
-  name <- ifelse(grepl("abigail", file_name, ignore.case = TRUE), "Abigail",
-                 ifelse(grepl("bubbles", file_name, ignore.case = TRUE), "Bubbles",
-                        ifelse(grepl("eric", file_name, ignore.case = TRUE), "Eric", NA)))
-  
-  # Initialise empty dataframe for storing predictions
-  file_predictions <- data.frame()
-  
-  for (behaviour in behaviours) {
-    # Extract the right row for the optimal design
-    optimal_design <- optimal %>% filter(targetActivity == behaviour)
+# test on hold-out test data and save parameters and performance in table 
+optimal_information <- data.frame()
+for (name_input in names){
+  for (targetActivity_input in targetActivities){
     
-    # Define the variables
-    window_length <- as.numeric(optimal_design$window_length)
-    overlap_percent <- as.numeric(optimal_design$overlap_percent)
-    down_Hz <- as.numeric(optimal_design$down_Hz)
-    feature_normalisation <- as.character(optimal_design$feature_normalisation)
-    nu <- as.numeric(optimal_design$nu)
-    kernel <- as.character(optimal_design$kernel)
-    features_list <- c("mean", "max", "min", "sd", "cor", "SMA", "minODBA", "maxODBA", "minVDBA", "maxVDBA", "entropy", "zero", "auto")
+    # load in the results and review
+    model_options <- fread(file.path(base_path, "Output/Model_Options/", paste0("ModelOptions2_", name, ".csv")))
+    top_options <- model_options %>%
+      filter(name == name_input, targetActivity == targetActivity_input) %>%
+      arrange(desc(as.numeric(Validation_accuracy))) %>%
+      head(n = 10)
     
-    # Process data
-    raw_processed <- raw %>%
-      process_data(features_list, window_length, overlap_percent, down_Hz, feature_normalisation) %>%
-      na.omit() %>%
-      select(-c(zero_Accel_Y, zero_Accel_Z))
+    # select the row you want
+    i <- 2
     
-    # Extract components
-    raw_times <- raw_processed %>% select(Timestamp)
-    raw_predictors <- raw_processed %>% select(-Timestamp)
+    # test and save the model (saved in the function)
+    test_results <- test_evaluate_SVM(top_options, i, name_input, targetActivity_input, save_path, base_path, features_list)
+    test_metrics <- flatten_confusion_matrix(test_results, "Test")
     
-    # Apply SVMs
-    if (behaviour == "Locomotion") {
-      predictions <- apply_model(raw_predictors, Locomotion_SVM, "Locomotion")
-      predictions <- as.data.frame(predictions)
-      colnames(predictions) <- c("Locomotion_prediction")
-    } else {
-      predictions <- apply_model(raw_predictors, Inactive_SVM, "Inactive")
-      predictions <- as.data.frame(predictions)
-      colnames(predictions) <- c("Inactive_prediction")
-    }
+    optimal_model_information <- cbind(top_options[i,], t(test_metrics))
+    colnames(optimal_model_information) <- c(colnames(top_options), colnames(t(test_metrics)))
     
-    energy <- raw_predictors %>% select(21:24)
-    
-    # Combine these
-    if (nrow(file_predictions) == 0) {
-      file_predictions <- cbind(raw_times, name, energy, predictions)
-    } else {
-      file_predictions <- merge(file_predictions, cbind(raw_times, predictions), by = "Timestamp", all = TRUE)
-    }
+    optimal_information <- rbind(optimal_information, optimal_model_information)
   }
-  
-  # Write this to the folder
-  output_file <- file.path(write_path, paste0("Labelled_", file_name))
-  fwrite(file_predictions, output_file)
 }
+
+optimal_information
+
+# use that information to 
+
+
+# layering the two models ####
+# set the parameters
+
+name_input <- c("Eric")
+targetActivity_input <- c("Inactive", "Locomotion")
+
+# load in the unlabelled data 
+unlabelled_performance <- data.frame()  # Initialize an empty data frame to store results
+
+for (name_input in names) {
+  for (targetActivity_input in targetActivities) {
+    
+    info <- optimal_information %>%
+      filter(name == name_input, targetActivity == targetActivity_input)
+    
+    unlabelled_features <- process_data(unlabelled_data, features_list, 
+                                        window_length = as.numeric(info[1, "window_length"]), 
+                                        overlap_percent = as.numeric(info[1, "overlap_percent"]), 
+                                        down_Hz = as.numeric(info[1, "down_Hz"]), 
+                                        feature_normalisation = as.character(info[1, "feature_normalisation"]))
+    
+    labels <-  unlabelled_features %>% na.omit() %>% select(Activity) 
+    unlabelled_features <- unlabelled_features %>% na.omit() %>% select(-c(ID, Activity)) 
+    
+    # Load in the appropriate SVM model
+    svm_model_path <- file.path(base_path, "Output/SVM_Models", paste(name_input, targetActivity_input, "SVM.rds", sep = "_"))
+    SVM_model <- readRDS(svm_model_path)
+    
+    # Predict onto the new data
+    predicted_unlabelled <- predict(SVM_model, newdata = unlabelled_features)
+    predicted_unlabelled <- as.factor(ifelse(predicted_unlabelled == "TRUE", targetActivity_input, "Outlier"))
+    
+    reference_unlabelled <- as.factor(ifelse(labels$Activity == targetActivity_input, targetActivity_input, "Outlier"))
+    
+    # Combine predictions and references into a data frame
+    current_performance <- data.frame(
+      Predicted = predicted_unlabelled,
+      Reference = reference_unlabelled
+    )
+    
+    # Append current results to the overall performance data frame
+    unlabelled_performance <- c(unlabelled_performance, current_performance)
+  }
+}
+
+unlabelled_performance_df <- data.frame(unlabelled_performance)
