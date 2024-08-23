@@ -12,7 +12,7 @@ library(zoo)
 
 
 # set base path
-base_path <- setwd("C:/Users/oaw001/Documents/Perentie")
+base_path <- setwd("R:/FSHEE/Science/Unsupervised-Accel/Other_Projects/Jordan_Perentie/PerentieAnalysis")
 
 # load in the files
 source(file.path(base_path, "Scripts", "PlotFunctions.R"))
@@ -20,7 +20,7 @@ source(file.path(base_path, "Scripts", "1classSVMFunctions.R"))
 source(file.path(base_path, "Scripts", "FeatureGeneration.R"))
 
 # jordan data
-data_original <- fread("C:/Users/oaw001/Documents/Perentie/DiCicco_Perentie_Labelled2.csv")
+data_original <- fread(file.path(base_path, "DiCicco_Perentie_Labelled.csv"))
 data_original <- data_original %>%
   rename(Accelerometer.X = Accel_X,
          Accelerometer.Y = Accel_Y,
@@ -31,28 +31,52 @@ data_original <- data_original %>%
 
 # Split Data ####
 # randomly allocate each individual to training, validating, or testing datasets
-data_test <- data_original[data_original$ID %in% "Eric", ] # select test individual
-other_data <- anti_join(data_original, data_test) # remainder
+#data_test <- data_original[data_original$ID %in% "Eric", ] # select test individual
+#other_data <- anti_join(data_original, data_test) # remainder
 
+
+## special for Perentie ####
+test_Eric <- data_original[data_original$ID == "Bubbles", ]
+
+# Function to select the last 5th of data for a dataframe
+select_last_fifth <- function(df) {
+  start_row <- ceiling(nrow(df) * 4/5) + 1
+  df[start_row:nrow(df), ]
+}
+
+# Apply the function to the filtered data, grouped by Activity
+test_Eric <- test_Eric %>%
+  group_by(Activity) %>%
+  do(select_last_fifth(.)) %>%
+  as.data.frame()
+
+other_Eric <- anti_join(data_original, test_Eric)
+
+fwrite(test_Eric, file.path(base_path, "test_bubbles.csv"))
+fwrite(other_Eric, file.path(base_path, "other_bubbles.csv"))
 
 # Visualising data ####
 # plot shows sample of each behaviour for each individual
 # select a subset of individuals to use
 data_subset <- data_original[data_original$ID %in% unique(data_original$ID)[1:3], ]
-beh_trace_plot <- plot_behaviours(behaviours = unique(data_subset$Activity), data = data_subset, n_samples = 200, n_col = 4)
+beh_trace_plot <- plot_behaviours(behaviours = unique(data_original$Activity), data = data_original, n_samples = 200, n_col = 4)
 # plot shows the total samples per behaviour and individual
 beh_volume_plot <- explore_data(data = data_original, frequency = 25, colours = unique(data_original$ID))
 
 
 # 1class-SVM model design tuning ####
 # list variables to test
+individual <- "Bubbles"
+other_data <- fread(file.path(base_path, "other_bubbles.csv"))
+
+
 down_Hz <- 50
-window_length_options <- c(1, 5) ##
-overlap_percent_options <- c(0, 50) ##
+window_length_options <- c(1) ##
+overlap_percent_options <- c(50) ##
 freq_Hz <- 50 ##
 feature_normalisation_options <- c("Standardisation") # "MinMaxScaling" ##
-nu_options <- c(0.001, 0.01, 0.1, 0.5, 0.9) ##
-kernel_options <- c("radial", "polynomial", "sigmoid", "linear")
+nu_options <- c(0.9) ##
+kernel_options <- c("sigmoid") #"radial", "polynomial", "linear"
 gamma_options <- c(0.1, 0.25, 0.5)
 degree_options <- c(3)
 
@@ -91,13 +115,32 @@ colnames(options_df) <- c("targetActivity", "window_length", "overlap_percent", 
 # add the additional parameters
 extended_options_df <- create_extended_options(model_hyperparameters_list, options_df)
 
-# create training and validation datasets by selecting chronological segments
-training_data <- other_data %>%
-  filter(ID %in% unique(ID)[-length(unique(ID))]) %>%
-  filter(Activity == targetActivity) %>% 
-  select(-Timestamp, -ID)
-validation_data <- anti_join(other_data, training_data) %>% 
-  select(-Timestamp, -ID)
+# create training and validation datasets
+#training_data <- other_data %>%
+#  filter(ID %in% unique(ID)[-length(unique(ID))]) %>%
+#  filter(Activity == targetActivity) %>% 
+#  select(-Timestamp, -ID)
+#validation_data <- anti_join(other_data, training_data) %>% 
+#  select(-Timestamp, -ID)
+
+# unique method for Perentie
+
+## special for Perentie ####
+val_ind <- other_data[other_data$ID == individual, ]
+
+# Function to select the last 5th of data for a dataframe
+select_last_quart <- function(df) {
+  start_row <- ceiling(nrow(df) * 3/4) + 1
+  df[start_row:nrow(df), ]
+}
+
+# Apply the function to the filtered data, grouped by Activity
+validation_data <- val_ind %>%
+  group_by(Activity) %>%
+  do(select_last_quart(.)) %>%
+  as.data.frame()
+
+training_data <- anti_join(data_original, validation_data)
 
 print("datasets created")
 
@@ -122,8 +165,8 @@ optimal_df <- fread(file.path(base_path, "Optimal_metrics_test.csv"))
 
 optimal_model_tests <- data.frame()
 
-targetActivity_options <- c("Inactive", "Locomotion")
-features_list <- c("mean", "max", "min", "sd", "cor", "SMA", "minODBA", "maxODBA", "minVDBA", "maxVDBA", "entropy", "auto") # zero
+targetActivity_options <- c("Locomotion")
+features_list <- c("auto", "entropy", "max", "min", "maxVDBA", "sd")
 all_axes <- c("Accelerometer.X", "Accelerometer.Y", "Accelerometer.Z")
 
 for (activity in targetActivity_options){
@@ -131,12 +174,14 @@ for (activity in targetActivity_options){
   # Extract the training and test data
   evaluation_data <- data_test %>% select(-Timestamp, -ID) # generated earlier
   training_data <- other_data %>%
-    filter(ID %in% unique(ID)[-length(unique(ID))]) %>%
     filter(Activity == activity) %>% 
-    select(-Timestamp, -ID)
+    select(-Timestamp, -ID) %>%
+    na.omit()
   
   # Extract the optimal parameters
-  optimal_df_row <- optimal_df %>% as.data.frame() %>% filter(targetActivity == activity)
+  optimal_df_row <- optimal_df %>% as.data.frame() %>% 
+    filter(targetActivity == activity) %>%
+    mutate(degree = NA) # because I didn't have this lol
   
   model_evaluation_metrics <- model_testing(optimal_df_row, base_path, training_data, evaluation_data, activity)
   

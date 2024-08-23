@@ -102,6 +102,8 @@ model_testing <- function(optimal_df_row, base_path, training_data, evaluation_d
   feature_normalisation = as.character(optimal_df_row["feature_normalisation"])
   nu = as.numeric(optimal_df_row["nu"])
   kernel = as.character(optimal_df_row["kernel"])
+  gamma = as.numeric(optimal_df_row["gamma"])
+  degree = as.numeric(optimal_df_row["degree"])
   
   # build the SVM
   single_class_SVM <- build_1_class_SVM(
@@ -112,30 +114,32 @@ model_testing <- function(optimal_df_row, base_path, training_data, evaluation_d
     down_Hz,
     feature_normalisation,
     nu,
-    kernel
+    kernel,
+    gamma,
+    degree
   )
   
   # save this svm
   saveRDS(single_class_SVM, file.path(base_path, paste0(targetActivity, "_2.rds")))
   
-  # evaluate performance
+  # evaluation data and downsample the data to balance classes
   evaluation_data <-
     process_data(evaluation_data, features_list, window_length, overlap_percent, down_Hz, feature_normalisation) %>%
     na.omit()
   
-  # downsample the data to balance classes
-  activity_counts <- evaluation_data %>%
-    count(Activity)
+  #activity_counts <- evaluation_data %>%
+  #  count(Activity)
   
   # Find the minimum count (to determine the size of the smallest group after downsampling)
-  min_count <- min(activity_counts$n)
+  #min_count <- min(activity_counts$n)
   
   # Downsample each 'Activity' group to have the same number of observations as 'min_count'
-  downsampled_data <- evaluation_data %>%
-    group_by(Activity) %>%
-    sample_n(min_count) %>%  # Sample 'min_count' observations from each group
-    ungroup()
+  #downsampled_data <- evaluation_data %>%
+  #  group_by(Activity) %>%
+  #  sample_n(min_count) %>%  # Sample 'min_count' observations from each group
+  #  ungroup()
   
+  downsampled_data <- evaluation_data
   model_evaluation <- evaluate_model_performance(downsampled_data, single_class_SVM, "Test", targetActivity)
   
   model_evaluation_metrics <- cbind(
@@ -146,6 +150,8 @@ model_testing <- function(optimal_df_row, base_path, training_data, evaluation_d
     feature_normalisation,
     nu,
     kernel,
+    gamma,
+    degree,
     t(model_evaluation$metrics)
   )
   
@@ -174,7 +180,7 @@ build_1_class_SVM <- function(
   print(paste("training data processed at:", Sys.time()))
   
   # separate the training data into predictors and labels 
-  training_data_predictors <- training_data_processed %>% select(-Activity)
+  training_data_predictors <- training_data_processed %>% select(-Activity, -ID, -Timestamp)
   training_data_labels <- training_data_processed %>% select(Activity)
 
   # train a model with the training predictors (no labels)
@@ -212,7 +218,7 @@ evaluate_model_performance <- function(
 ){
   
   # Separate predictors and labels
-  data_predictors <- processed_data %>% select(-Activity)
+  data_predictors <- processed_data %>% select(-Activity, -Timestamp, -ID)
   data_labels <- processed_data$Activity
   
   # Make predictions on the test data
